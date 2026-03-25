@@ -136,7 +136,6 @@ template<typename T>
              */
             friend Matrix<T> operator+ <>(const Matrix<T> &, const Matrix<T> &);
             friend Matrix<T> operator- <>(const Matrix<T> &, const Matrix<T> &);
-            friend Matrix<T> operator* <>(const Matrix<T> &, const Matrix<T> &);
         }; 
 
 
@@ -190,31 +189,5 @@ template<typename T>
 
         return Matrix<T>(result, A.n_rows, A.n_cols);
 }
-
-template<typename T>
-    Matrix<T> operator*(const Matrix<T>& A, const Matrix<T>& B) {
-        if (A.n_cols != B.n_rows) {
-            throw std::invalid_argument("Matrix dimensions must match");
-        }
-
-        size_t M = A.n_rows;
-        size_t N = B.n_cols;
-        size_t K = A.n_cols;
-
-        std::vector<T> C(M * N, 0);
-
-        const T* a = A.data();
-        const T* b = B.data();
-
-        for (size_t j = 0; j < N; ++j) {
-            for (size_t k = 0; k < K; ++k) {
-                for (size_t i = 0; i < M; ++i) {
-                    C[i + j * M] += a[i + k * M] * b[k + j * B.n_rows];
-                }
-            }
-        }
-
-        return Matrix<T>(C, M, N);
-    }
 
 #endif // MATRIX_HPP
