@@ -4,6 +4,7 @@
 #include <iostream>
 #include <vector>
 #include <stdexcept>
+#include <random>
 
 /**
  * @brief Dense matrix class with column-major storage.
@@ -189,5 +190,22 @@ template<typename T>
 
         return Matrix<T>(result, A.n_rows, A.n_cols);
 }
+
+
+/**
+ * @brief Generates a random matrix of size Nrows x Ncols.
+ * @tparam T Element type (float, double, int, etc.)
+ * @param Nrows Number of rows
+ * @param Ncols Number of columns
+ * @param RNG Random number generator (mt19937)
+ * @return Matrix<T> Matrix filled with random values
+ */
+template<typename T>
+    Matrix<T> GenerateRandomMatrix(const int Nrows, const int Ncols, std::mt19937 & RNG) {
+        std::uniform_int_distribution<int> dist(0, 10);
+        std::vector<T> v(Nrows * Ncols);
+        for (size_t i = 0; i < v.size(); ++i) v[i] = static_cast<T>(dist(RNG));
+        return Matrix<T>(v, Nrows, Ncols);
+    }
 
 #endif // MATRIX_HPP
