@@ -1,9 +1,13 @@
 #include "GEMM.hpp"
 #include <vector>
+#include <random>
 #include <cstdlib>
 #include <string>
 #include <ctime>
-
+#ifndef SCALAR_TYPE
+#define SCALAR_TYPE float
+#endif
+using Scalar = SCALAR_TYPE;
 using namespace std;
 
 int main() {
@@ -13,13 +17,16 @@ int main() {
     size_t N = getEnvSize("GEMM_N", 3);
     size_t K = getEnvSize("GEMM_K", 3);
 
-    auto A = GenerateRandomMatrix<float>(M, K, RNG);
-    auto B = GenerateRandomMatrix<float>(K, N, RNG);
+    auto A = GenerateRandomMatrix<Scalar>(M, K, RNG);
+    auto B = GenerateRandomMatrix<Scalar>(K, N, RNG);
     
     cout << "Matrix A = \n" << A << "\n";
     cout << "Matrix B = \n" << B << "\n";
     cout << "Algo: " << (current_algo == ProdAlgo::Classic ? "Classic" : "Block")
           << ", Block size: " << blockSize << "\n";
+    std::cout << "Type: "
+          << (std::is_same<Scalar, float>::value ? "float" : "double")
+          << "\n";
     auto C = A * B;
     cout << "Matrix C = A * B \n" << C << "\n";
     return 0;
