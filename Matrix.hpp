@@ -143,9 +143,10 @@ template<typename T>
 template<typename T> 
     std::ostream & operator<<(std::ostream & os, const Matrix<T> & mat) {
         if (mat.n_rows > 10 || mat.n_cols > 10) {
-            throw std::runtime_error("Matrix too large to print");
+            std::cerr << "[Warning] Matrix too large to print ("
+                    << mat.n_rows << "x" << mat.n_cols << ")\n";
+            return os;
         }
-
         for (size_t i = 0; i < mat.n_rows; ++i) {
             for (size_t j = 0; j < mat.n_cols; ++j) {
                 os << mat(i, j) << " ";
