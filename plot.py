@@ -14,6 +14,7 @@ df["time_my"] = df["time_my"].astype(float)
 df["time_blas"] = df["time_blas"].astype(float)
 
 types = df["type"].unique()
+sizes = sorted(df["size"].unique())
 
 colors = {
     512: "red",
@@ -21,57 +22,54 @@ colors = {
     2048: "green"
 }
 
-fig, axes = plt.subplots(1, len(types), figsize=(14, 6), sharey=True)
+for t in types:
+    for size in sizes:
 
-if len(types) == 1:
-    axes = [axes]
+        df_s = df[(df["type"] == t) & (df["size"] == size)]
 
-# ── Loop float / double ───────────────────
-for ax, t in zip(axes, types):
-    df_t = df[df["type"] == t]
+        if df_s.empty:
+            continue
 
-    for size in sorted(df_t["size"].unique()):
-        df_s = df_t[df_t["size"] == size]
+        plt.figure(figsize=(8, 6))
 
         # ── GEMM BLOCK
         df_block = df_s[df_s["algo"] == "block"].sort_values("block")
 
         if not df_block.empty:
-            ax.plot(
+            plt.plot(
                 df_block["block"],
                 df_block["time_my"],
                 marker="o",
-                color=colors.get(size, None),
                 linestyle="-",
-                label=f"GEMM {size}"
+                color=colors.get(size, "black"),
+                label="My GEMM (block)"
             )
 
-        # ── OpenBLAS (ligne horizontale)
+        # ── OpenBLAS
         df_blas = df_s[df_s["block"] == df_s["block"].max()]
 
         if not df_blas.empty:
             blas_time = df_blas["time_blas"].values[0]
 
-            ax.hlines(
+            plt.hlines(
                 y=blas_time,
-                xmin=min(df_s["block"]),
-                xmax=max(df_s["block"]),
-                colors=colors.get(size, None),
+                xmin=min(df_block["block"]),
+                xmax=max(df_block["block"]),
+                colors="black",
                 linestyles="dashed",
-                label=f"OpenBLAS {size}"
+                label="OpenBLAS"
             )
 
-    ax.set_title(f"Type: {t}")
-    ax.set_xlabel("Block size")
-    ax.set_yscale("log")
-    ax.grid()
+        plt.title(f"{t.upper()} - Size {size}x{size}")
+        plt.xlabel("Block size")
+        plt.ylabel("Time (seconds)")
+        plt.yscale("log")
+        plt.ylim(bottom=1e-3)
+        plt.grid()
+        plt.legend(loc="lower right")
 
-axes[0].set_ylabel("Time (seconds)")
+        filename = f"{t}_{size}.png"
+        plt.savefig(filename, dpi=300)
+        plt.close()
 
-handles, labels = axes[0].get_legend_handles_labels()
-fig.legend(handles, labels, loc="upper center", ncol=3)
-
-plt.tight_layout(rect=[0, 0, 1, 0.90])
-
-plt.savefig("comparison.png", dpi=300)
-plt.show()
+        print(f"[OK] Generated {filename}")
