@@ -11,10 +11,17 @@
 
 /**
  * @brief CUDA Kernel for Classical General Matrix Multiplication (GEMM).
- * * This kernel computes the matrix product C = A * B. It is designed for 
- * matrices stored in Column-Major format (BLAS standard). 
- * * The implementation utilizes "Grid-stride loops," allowing the kernel to 
- * process matrices of any size regardless of the grid dimensions.
+ *
+ * This kernel computes the matrix product:
+ *      C = alpha * A * B + beta * C
+ *
+ * Matrices are stored in Column-Major format (BLAS standard):
+ *      - A (M x K)
+ *      - B (K x N)
+ *      - C (M x N)
+ *
+ * Each thread computes one element of C using a dot product.
+ * Boundary checks ensure safe execution for arbitrary matrix sizes.
  *
  * @tparam T           Data type (typically float or double).
  * @param[in]  A       Pointer to the input matrix A (M x K).
@@ -23,51 +30,61 @@
  * @param[in]  M       Number of rows of A and C.
  * @param[in]  N       Number of columns of B and C.
  * @param[in]  K       Number of common dimensions (columns of A, rows of B).
+ * @param[in]  alpha   Scalar multiplier for A * B.
+ * @param[in]  beta    Scalar multiplier for C.
  */
+
 template<typename T>
     __global__ void classic_gemm(const T* __restrict__ A,
                 const T* __restrict__ B,
                 T* __restrict__ C,
-                int M, int N, int K) {
-        int i = blockIdx.x * blockDim.x + threadIdx.x;
-        int j = blockIdx.y * blockDim.y + threadIdx.y;
-
-        // Grid-stride loops
-        for (int row = i; row < M; row += blockDim.x * gridDim.x) {
-            for (int col = j; col < N; col += blockDim.y * gridDim.y) {
-
-                T sum = static_cast<T>(0);
-
-                for (int k = 0; k < K; ++k) {
-                    sum += A[row + k * M] * B[k + col * K];
-                }
-
-                C[row + col * M] = sum;
+                int M, int N, int K, 
+                const T alpha, const T beta) {
+        int rows = blockIdx.y * blockDim.y + threadIdx.y;
+        int cols = blockIdx.x * blockDim.x + threadIdx.x;
+        if(rows < M && cols < N){
+            T sum = static_cast<T>(0);
+            for (int k = 0; k < K; ++k) {
+                sum += A[rows + k * M] * B[k + cols * K];
             }
+            C[rows + cols * M] = alpha * sum + beta * C[rows + cols * M];
         }
     }
 
 
 /**
- * @brief Tiled CUDA kernel for matrix-matrix multiplication (GEMM) in column-major format.
+ * @brief Tiled CUDA kernel for General Matrix Multiplication (GEMM).
  *
- * This kernel computes C = A * B using shared memory tiles for better memory coalescing
- * and reduced global memory accesses. Each thread block computes a TILE x TILE submatrix of C.
+ * This kernel computes the matrix product:
+ *      C = alpha * A * B + beta * C
  *
- * @tparam T    Data type of matrix elements (e.g., float, double).
- * @tparam TILE Tile size in both row and column directions.
- * @param[in]  A Pointer to input matrix A (size M x K) in column-major order.
- * @param[in]  B Pointer to input matrix B (size K x N) in column-major order.
- * @param[out] C Pointer to output matrix C (size M x N) in column-major order.
- * @param[in]  M Number of rows in A and C.
- * @param[in]  N Number of columns in B and C.
- * @param[in]  K Number of columns in A / rows in B.
+ * Matrices are stored in Column-Major format (BLAS standard):
+ *      - A (M x K)
+ *      - B (K x N)
+ *      - C (M x N)
+ *
+ * The implementation uses shared memory tiling to reduce global memory
+ * accesses. Each thread block computes a TILE x TILE submatrix of C,
+ * and each thread computes one element using a tiled dot product.
+ *
+ * @tparam T           Data type (typically float or double).
+ * @tparam TILE        Tile size (blockDim.x = blockDim.y = TILE).
+ * @param[in]  A       Pointer to the input matrix A (M x K).
+ * @param[in]  B       Pointer to the input matrix B (K x N).
+ * @param[out] C       Pointer to the output matrix C (M x N).
+ * @param[in]  M       Number of rows of A and C.
+ * @param[in]  N       Number of columns of B and C.
+ * @param[in]  K       Number of common dimensions (columns of A, rows of B).
+ * @param[in]  alpha   Scalar multiplier for A * B.
+ * @param[in]  beta    Scalar multiplier for C.
  */
+
 template<typename T, int TILE>
-    __global__ void tile_gemm(const T* __restrict__ A,
+    __global__ void tile2D_gemm(const T* __restrict__ A,
                           const T* __restrict__ B,
                           T* __restrict__ C,
-                          int M, int N, int K) {
+                          int M, int N, int K, 
+                          const T alpha, const T beta) {
 
     // Shared memory tiles for A and B
     __shared__ T As[TILE * TILE];
@@ -106,10 +123,9 @@ template<typename T, int TILE>
         __syncthreads();
 
         // Compute partial sum for the tile
+        // #pragma unroll
         for (int k = 0; k < TILE; ++k) {
-            T a = As[tx + k * TILE];
-            T b = Bs[k + ty * TILE];
-            sum += a * b;
+            sum += As[tx + k * TILE] * Bs[k + ty * TILE];
         }
 
         // Synchronize before loading the next tile
@@ -118,7 +134,7 @@ template<typename T, int TILE>
 
     // Write the computed element to global memory
     if (row < M && col < N)
-        C[row + col * M] = sum;
+        C[row + col * M] = alpha * sum + beta * C[row + col * M];
 }
 
 

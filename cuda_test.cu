@@ -2,8 +2,8 @@
 #include <iostream>
 #include <vector>
 #include <random>
-#include <chrono>
 #include <cmath>
+#include <chrono>
 
 template<typename T>
     void cpu_gemm(const std::vector<T>& A,
@@ -47,6 +47,8 @@ int main() {
     int M = 512;
     int N = 512;
     int K = 512;
+    T alpha = 1;
+    T beta = 0;
 
     size_t sizeA = M * K;
     size_t sizeB = K * N;
@@ -57,6 +59,10 @@ int main() {
     std::vector<T> h_C_cpu(sizeC, 0);
     std::vector<T> h_C_gpu(sizeC, 0);
 
+    cudaEvent_t start, stop;
+    cudaEventCreate(&start);
+    cudaEventCreate(&stop);
+
     fill_random(h_A);
     fill_random(h_B);
 
@@ -64,8 +70,8 @@ int main() {
     cpu_gemm(h_A, h_B, h_C_cpu, M, N, K);
     auto t2 = std::chrono::high_resolution_clock::now();
 
-    double cpu_time = std::chrono::duration<double>(t2 - t1).count();
-    std::cout << "CPU GEMM time: " << cpu_time << " s\n";
+    double cpu_time = std::chrono::duration<double, std::milli>(t2 - t1).count();
+    std::cout << "CPU GEMM time: " << cpu_time << " ms\n";
 
     T *d_A, *d_B, *d_C;
     cudaMalloc(&d_A, sizeA * sizeof(T));
@@ -75,23 +81,23 @@ int main() {
     cudaMemcpy(d_A, h_A.data(), sizeA * sizeof(T), cudaMemcpyHostToDevice);
     cudaMemcpy(d_B, h_B.data(), sizeB * sizeof(T), cudaMemcpyHostToDevice);
 
-    dim3 threads(16, 16);
+    dim3 threads(32, 32);
     dim3 blocks((M + threads.x - 1) / threads.x,
                 (N + threads.y - 1) / threads.y);
 
-    auto t3 = std::chrono::high_resolution_clock::now();
+    cudaEventRecord(start);
 
-    classic_gemm<T><<<blocks, threads>>>(d_A, d_B, d_C, M, N, K);
-    cudaDeviceSynchronize();
+    classic_gemm<T><<<blocks, threads>>>(d_A, d_B, d_C, M, N, K, alpha, beta);
+    cudaEventRecord(stop);
+    cudaEventSynchronize(stop);
 
-    auto t4 = std::chrono::high_resolution_clock::now();
+    float gpu_time_ms = 0.0f;
+    cudaEventElapsedTime(&gpu_time_ms, start, stop);
 
     cudaMemcpy(h_C_gpu.data(), d_C, sizeC * sizeof(T), cudaMemcpyDeviceToHost);
 
-    double gpu_time = std::chrono::duration<double>(t4 - t3).count();
-
     std::cout << "\n=== CLASSIC GEMM ===\n";
-    std::cout << "GPU time: " << gpu_time << " s\n";
+    std::cout << "GPU time: " << gpu_time_ms << " ms\n";
 
     if (check_error(h_C_cpu, h_C_gpu))
         std::cout << "Correct\n";
@@ -105,21 +111,22 @@ int main() {
 
     dim3 threads2(TILE, TILE);
     dim3 blocks2((M + TILE - 1) / TILE,
-                 (N + TILE - 1) / TILE);
+                (N + TILE - 1) / TILE);
 
-    auto t5 = std::chrono::high_resolution_clock::now();
+    cudaEventRecord(start);
 
-    tile_gemm<T, TILE><<<blocks2, threads2>>>(d_A, d_B, d_C, M, N, K);
-    cudaDeviceSynchronize();
+    tile2D_gemm<T, TILE><<<blocks2, threads2>>>(d_A, d_B, d_C, M, N, K, alpha, beta);
 
-    auto t6 = std::chrono::high_resolution_clock::now();
+    cudaEventRecord(stop);
+    cudaEventSynchronize(stop);
+
+    float gpu_time_tile_ms = 0.0f;
+    cudaEventElapsedTime(&gpu_time_tile_ms, start, stop);
 
     cudaMemcpy(h_C_gpu.data(), d_C, sizeC * sizeof(T), cudaMemcpyDeviceToHost);
 
-    double gpu_time_tile = std::chrono::duration<double>(t6 - t5).count();
-
     std::cout << "\n=== TILED GEMM ===\n";
-    std::cout << "GPU time: " << gpu_time_tile << " s\n";
+    std::cout << "GPU time: " << gpu_time_tile_ms << " ms\n";
 
     if (check_error(h_C_cpu, h_C_gpu))
         std::cout << "Correct\n";
