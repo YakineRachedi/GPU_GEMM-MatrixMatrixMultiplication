@@ -1,66 +1,175 @@
-CXX      = g++
-NVCC     = nvcc
+# Compilers
+CXX = g++
+NVCC = nvcc
 
+MAKEFLAGS += --no-builtin-rules
+.SUFFIXES:
+
+# Sources
+CPU_SRC = tests/cpu_test.cpp
+GPU_SRC = tests/cuda_test.cu src/gpu/run_kernels.cu
+
+# Benchmarks directory
+BENCH_DIR = benchmarks
+
+INCLUDES = -Iinclude -Iutils -Isrc/cpu -Isrc/gpu
+
+# Targets
+CPU_TARGET = $(BENCH_DIR)/cpu_test.exe
+GPU_TARGET = $(BENCH_DIR)/gpu_test.exe
+
+# OpenBLAS
 OPENBLAS_INC   = C:/OpenBLAS/include
 OPENBLAS_LIB   = C:/OpenBLAS/lib
 OPENBLAS_FLAGS = -lopenblas -static
 
-TYPE     ?= float
+# Parameters 
+TYPE  ?= float
+ALGO  ?= classic
+BLOCK ?= 64
+M     ?= 256
+N     ?= 256
+K     ?= 256
+ARCH ?= sm_86
 
-CXXFLAGS = -std=c++14 -DSCALAR_TYPE=$(TYPE)
-
-ifdef DEBUG
-CXXFLAGS  += -g -O0 -Wall -fbounds-check -pedantic -D_GLIBCXX_DEBUG
-CXXFLAGS2  = $(CXXFLAGS)
-else
-CXXFLAGS2  = $(CXXFLAGS) -O2 -march=native -Wall
-CXXFLAGS  += -O3 -march=native -Wall
-endif
-
-ARCH      ?= sm_80
-NVCCFLAGS  = -std=c++14 -arch=$(ARCH) -O2 -DSCALAR_TYPE=$(TYPE)
+# Flags
+CXXFLAGS = -std=c++17 -DSCALAR_TYPE=$(TYPE) -DBLOCK_SIZE=$(BLOCK)
+NVCCFLAGS = -std=c++17 -arch=$(ARCH)
 
 ifdef DEBUG
+CXXFLAGS += -g -O0 -Wall -fbounds-check -pedantic -D_GLIBCXX_DEBUG
 NVCCFLAGS += -g -G
+
+else
+CXXFLAGS += -O3 -march=native -Wall -fopenmp
+NVCCFLAGS += -O3
 endif
 
-ALL = test.exe cuda_test.exe
-
+.PHONY: all cpu gpu run bench-classic bench-block bench-all clean setup
 default: help
 
-all: $(ALL)
+setup:
+	mkdir -p $(BENCH_DIR)
+
+all: cpu gpu
+
+cpu: setup
+	@echo "Compiling CPU benchmark..."
+	$(CXX) $(CXXFLAGS) $(CPU_SRC) $(INCLUDES) \
+	-I$(OPENBLAS_INC) \
+	-L$(OPENBLAS_LIB) $(OPENBLAS_FLAGS) \
+	-o $(CPU_TARGET)
+
+gpu: setup
+	@echo "Compiling GPU benchmark..."
+	$(NVCC) $(NVCCFLAGS) $(GPU_SRC) $(INCLUDES) \
+	-o $(GPU_TARGET)
+
+run: cpu
+	set GEMM_ALGO=$(ALGO)&& \
+	set GEMM_BLOCK=$(BLOCK)&& \
+	set GEMM_M=$(M)&& \
+	set GEMM_N=$(N)&& \
+	set GEMM_K=$(K)&& \
+	$(CPU_TARGET)
+
+# =========================================================
+# Benchmarks
+# =========================================================
+
+bench-classic: cpu
+	set GEMM_ALGO=classic&& \
+	set GEMM_M=512&& \
+	set GEMM_N=512&& \
+	set GEMM_K=512&& \
+	$(CPU_TARGET)
+
+bench-block: cpu
+	set GEMM_ALGO=block&& \
+	set GEMM_BLOCK=64&& \
+	set GEMM_M=512&& \
+	set GEMM_N=512&& \
+	set GEMM_K=512&& \
+	$(CPU_TARGET)
+
+bench-all: cpu
+	@echo "--- Running Benchmarks ---"
+
+	set GEMM_ALGO=classic&& \
+	set GEMM_M=512&& \
+	set GEMM_N=512&& \
+	set GEMM_K=512&& \
+	$(CPU_TARGET)
+
+	set GEMM_ALGO=block&& \
+	set GEMM_BLOCK=32&& \
+	set GEMM_M=512&& \
+	set GEMM_N=512&& \
+	set GEMM_K=512&& \
+	$(CPU_TARGET)
+
+	set GEMM_ALGO=block&& \
+	set GEMM_BLOCK=64&& \
+	set GEMM_M=512&& \
+	set GEMM_N=512&& \
+	set GEMM_K=512&& \
+	$(CPU_TARGET)
+
+	set GEMM_ALGO=block&& \
+	set GEMM_BLOCK=128&& \
+	set GEMM_M=512&& \
+	set GEMM_N=512&& \
+	set GEMM_K=512&& \
+	$(CPU_TARGET)
 
 clean:
-	@rm -rf *.o *.exe *.txt *.png *.csv *~
-
-test: test.cpp
-	@echo "Compiling CPU executable..."
-	$(CXX) $(CXXFLAGS2) $< -I$(OPENBLAS_INC) -L$(OPENBLAS_LIB) $(OPENBLAS_FLAGS) -o $@
-
-cuda_test.exe: cuda_test.cu
-	@echo "Compiling CUDA executable..."
-	$(NVCC) $(NVCCFLAGS) $< -o $@
+	del /Q *.exe 2>nul
+	del /Q benchmarks\*.exe 2>nul
+	del /Q benchmarks\*.csv 2>nul
 
 help:
-	@echo "Available targets :"
-	@echo "    all              : compile CPU + CUDA"
-	@echo "    test.exe         : CPU only"
-	@echo "    cuda_test.exe    : CUDA only"
+	@echo "=================================================="
+	@echo "                 GEMM Makefile"
+	@echo "=================================================="
 	@echo ""
-	@echo "Options :"
-	@echo "    DEBUG=yes        : mode debug"
-	@echo "    TYPE=float|double: type scalar (default: float)"
-	@echo "    ARCH=sm_XX       : architecture GPU (default: sm_80)"
+	@echo "Available targets:"
+	@echo "  make cpu              Compile CPU benchmark"
+	@echo "  make gpu              Compile GPU benchmark"
+	@echo "  make all              Compile CPU + GPU benchmarks"
+	@echo "  make run              Run CPU benchmark"
+	@echo "  make bench-classic    Run classic GEMM benchmark"
+	@echo "  make bench-block      Run blocked GEMM benchmark"
+	@echo "  make bench-all        Run all CPU benchmarks"
+	@echo "  make clean            Remove executables and CSV files"
 	@echo ""
-	@echo "Configuration :"
-	@echo "    CXX       : $(CXX)"
-	@echo "    CXXFLAGS  : $(CXXFLAGS2)"
-	@echo "    NVCCFLAGS : $(NVCCFLAGS)"
-	@echo "    OPENBLAS_INC   : $(OPENBLAS_INC)"
-	@echo "    OPENBLAS_LIB   : $(OPENBLAS_LIB)"	
-	@echo "    OPENBLAS_FLAGS : $(OPENBLAS_FLAGS)"
-	@echo " Usage : "
-	@echo "	make test.exe "                       
-	@echo "	make test.exe TYPE=double"
-	@echo " make cuda_test.exe ARCH=sm_86 "        
-	@echo "	make all TYPE=double ARCH=sm_86"
+	@echo "Options:"
+	@echo "  DEBUG=yes             Enable debug mode"
+	@echo "  TYPE=float|double     Scalar type (default: float)"
+	@echo "  BLOCK=<size>          Block size for blocked GEMM (default: 64)"
+	@echo "  ALGO=classic|block    GEMM algorithm (default: classic)"
+	@echo "  M=<size>              Number of rows of A/C (default: 256)"
+	@echo "  N=<size>              Number of cols of B/C (default: 256)"
+	@echo "  K=<size>              Shared dimension (default: 256)"
+	@echo "  ARCH=sm_XX            CUDA architecture (default: sm_86)"
+	@echo ""
+	@echo "Configuration:"
+	@echo "  CXX              : $(CXX)"
+	@echo "  NVCC             : $(NVCC)"
+	@echo "  CXXFLAGS         : $(CXXFLAGS)"
+	@echo "  NVCCFLAGS        : $(NVCCFLAGS)"
+	@echo "  OPENBLAS_INC     : $(OPENBLAS_INC)"
+	@echo "  OPENBLAS_LIB     : $(OPENBLAS_LIB)"
+	@echo "  OPENBLAS_FLAGS   : $(OPENBLAS_FLAGS)"
+	@echo ""
+	@echo "Examples:"
+	@echo "  make cpu"
+	@echo "  make gpu ARCH=sm_86"
+	@echo "  make all TYPE=double"
+	@echo "  make run ALGO=block BLOCK=128"
+	@echo "  make run TYPE=double M=1024 N=1024 K=1024"
+	@echo "  make bench-all"
+	@echo ""
+	@echo "Executables:"
+	@echo "  $(CPU_TARGET)"
+	@echo "  $(GPU_TARGET)"
+	@echo "=================================================="

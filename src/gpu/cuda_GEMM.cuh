@@ -35,11 +35,8 @@
  */
 
 template<typename T>
-    __global__ void classic_gemm(const T* __restrict__ A,
-                const T* __restrict__ B,
-                T* __restrict__ C,
-                int M, int N, int K, 
-                const T alpha, const T beta) {
+    __global__ void cuda_naive_gemm(const T* __restrict__ A, const T* __restrict__ B, T* __restrict__ C,
+                                                    int M, int N, int K, const T alpha, const T beta) {
         int rows = blockIdx.y * blockDim.y + threadIdx.y;
         int cols = blockIdx.x * blockDim.x + threadIdx.x;
         if(rows < M && cols < N){
@@ -48,6 +45,54 @@ template<typename T>
                 sum += A[rows + k * M] * B[k + cols * K];
             }
             C[rows + cols * M] = alpha * sum + beta * C[rows + cols * M];
+        }
+    }
+
+/**
+ * @brief 1D-thread CUDA kernel for GEMM with global memory coalescing.
+ *
+ * Computes:
+ *      C = alpha * A * B + beta * C
+ *
+ * Matrices are stored in Column-Major format.
+ *
+ * Threads are organized in 1D, and each thread computes one element of C.
+ * The 2D indices (row, col) are reconstructed from threadIdx.x to improve
+ * memory access patterns (coalescing).
+ *
+ * Mapping:
+ *      - row = threadIdx.x / BLOCKSIZE
+ *      - col = threadIdx.x % BLOCKSIZE
+ *
+ * This layout can improve coalesced accesses depending on how warps are formed.
+ *
+ * @tparam T           Data type (e.g., float or double).
+ * @tparam BLOCKSIZE   Tile size (BLOCKSIZE x BLOCKSIZE per block).
+ * @param[in]  A       Pointer to matrix A (M x K).
+ * @param[in]  B       Pointer to matrix B (K x N).
+ * @param[out] C       Pointer to matrix C (M x N).
+ * @param[in]  M       Number of rows.
+ * @param[in]  N       Number of columns.
+ * @param[in]  K       Inner dimension.
+ * @param[in]  alpha   Scalar multiplier for A * B.
+ * @param[in]  beta    Scalar multiplier for C.
+ */
+template<typename T, const uint BLOCKSIZE>
+    __global__ void classic_gemm_global_mem_coalesce(const T* __restrict__ A, const T* __restrict__ B, T* __restrict__ C,
+                                                                int M, int N, int K, const T alpha, const T beta) {
+
+        // Reconstruct 2D indices from 1D thread index
+        int row = blockIdx.y * BLOCKSIZE + (threadIdx.x / BLOCKSIZE);
+        int col = blockIdx.x * BLOCKSIZE + (threadIdx.x % BLOCKSIZE);
+
+        if (row < M && col < N) {
+            T sum = static_cast<T>(0);
+
+            for (int k = 0; k < K; ++k) {
+                sum += A[row + k * M] * B[k + col * K];
+            }
+
+            C[row + col * M] = alpha * sum + beta * C[row + col * M];
         }
     }
 
@@ -79,13 +124,9 @@ template<typename T>
  * @param[in]  beta    Scalar multiplier for C.
  */
 
-template<typename T, int TILE>
-    __global__ void tile2D_gemm(const T* __restrict__ A,
-                          const T* __restrict__ B,
-                          T* __restrict__ C,
-                          int M, int N, int K, 
-                          const T alpha, const T beta) {
-
+template<typename T, const uint TILE>
+    __global__ void tile2D_gemm(const T* __restrict__ A, const T* __restrict__ B, T* __restrict__ C,
+                                                        int M, int N, int K, const T alpha, const T beta) {
     // Shared memory tiles for A and B
     __shared__ T As[TILE * TILE];
     __shared__ T Bs[TILE * TILE];
@@ -148,10 +189,8 @@ template<typename T, int TILE>
  * @tparam T    Data type
  * @tparam TILE Tile size
  */
-template<typename T, int TILE>
-    __global__ void test_tile_mapping(const T* __restrict__ Input_Matrix,
-                                    T* __restrict__ Output_Matrix,
-                                    int M, int N) {
+template<typename T, const uint TILE>
+    __global__ void test_tile_mapping(const T* __restrict__ Input_Matrix, T* __restrict__ Output_Matrix, int M, int N) {
 
         __shared__ T LocalMatrix[TILE * TILE];
 
@@ -172,22 +211,6 @@ template<typename T, int TILE>
             Output_Matrix[row + col * M] = LocalMatrix[tx + ty * TILE];
         }
     }
-
-/**
- * Function to test if matrix A do not mismatch with matrix B
- */
-template<typename T>
-    bool compare(const std::vector<T>& A, const std::vector<T>& B) {
-        for (size_t i = 0; i < A.size(); ++i) {
-            if (A[i] != B[i]) {
-                std::cout << "Mismatch at " << i
-                        << " : " << A[i] << " vs " << B[i] << "\n";
-                return false;
-            }
-        }
-        return true;
-    }
-
 
 
 #endif
