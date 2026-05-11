@@ -140,6 +140,8 @@ Python scripts are provided for:
 ├── tests/
 │   ├── cpu_test.cpp
 │   └── cuda_test.cu
+├── docker/
+│   └── Dockerfile
 │
 ├── utils/
 │   ├── cuda_check.cuh
@@ -155,23 +157,40 @@ Python scripts are provided for:
 # Build System
 
 The project uses a unified Makefile for both CPU and GPU builds.
+In addition, a **Docker environment is provided** to ensure reproducibility across systems and simplify dependency management (OpenBLAS, CUDA, Python, compilers).
 
 ---
 
 # Requirements
 
+## Local Setup (without Docker)
 ## CPU
 
-- C++17 compiler
+- C++17 compiler (g++)
 - OpenMP
 - OpenBLAS
 
 ## GPU
 
-- CUDA Toolkit
+- CUDA Toolkit (nvcc)
 - NVIDIA GPU supporting CUDA
 
 ---
+
+## Docker Setup (Recommended)
+
+The project can be fully executed inside a Docker container.
+
+### Build Docker image
+
+```bash
+docker build -t matrix-gemm .
+```
+or using Makefile :
+
+```bash
+make docker-build
+```
 
 # Build
 

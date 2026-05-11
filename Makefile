@@ -48,6 +48,16 @@ endif
 .PHONY: all cpu gpu run bench-classic bench-block bench-all clean setup
 default: help
 
+docker-run:
+	docker run -it --rm \
+		--gpus all \
+		-v $(CURDIR):/usr/local/workspace \
+		-w /usr/local/workspace \
+		matrix-gemm
+
+docker-build:
+	docker build -t matrix-gemm .
+
 setup:
 	mkdir -p $(BENCH_DIR)
 
@@ -173,3 +183,22 @@ help:
 	@echo "  $(CPU_TARGET)"
 	@echo "  $(GPU_TARGET)"
 	@echo "=================================================="
+	@echo ""
+	@echo "=================================================="
+	@echo "                    DOCKER"
+	@echo "=================================================="
+	@echo ""
+	@echo "Docker usage:"
+	@echo "  make docker-run       Run project inside Docker container"
+	@echo ""
+	@echo "Docker features:"
+	@echo "  - Prebuilt environment (g++, nvcc, OpenBLAS, Python)"
+	@echo "  - Reproducible builds"
+	@echo "  - GPU support (if --gpus available)"
+	@echo ""
+	@echo "Example workflow:"
+	@echo "  docker build -t matrix-gemm ."
+	@echo "  make docker-run"
+	@echo "  make cpu"
+	@echo "  make gpu"
+	@echo ""
